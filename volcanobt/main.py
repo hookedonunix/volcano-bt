@@ -1,49 +1,126 @@
 import asyncio
-import sys
-from bleak import BleakScanner, BleakClient
+import curses
+import math
+import logging
+from abc import ABC, abstractmethod
+from volcano import Volcano
 
-ADDRESS = "FB:17:6B:85:5B:C2"
+import _curses
 
-VOLCANO_STAT_SERVICE_UUID = "10100000-5354-4f52-5a26-4249434b454c"
-VOLCANO_HW_SERVICE_UUID = "10110000-5354-4f52-5a26-4249434b454c"
+logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
 
-VOLCANO_TEMP_CURR_UUID = "10110001-5354-4f52-5a26-4249434b454c"
-VOLCANO_TEMP_TARGET_UUID = "10110003-5354-4f52-5a26-4249434b454c"
+_LOGGER = logging.getLogger(__name__)
 
-VOLCANO_HEATER_ON_UUID = "1011000f-5354-4f52-5a26-4249434b454c"
-VOLCANO_HEATER_OFF_UUID = "10110010-5354-4f52-5a26-4249434b454c"
+VOLCANO_MAC = 'FB:17:6B:85:5B:C2'
 
-VOLCANO_PUMP_ON_UUID = "10110013-5354-4f52-5a26-4249434b454c"
-VOLCANO_PUMP_OFF_UUID = "10110014-5354-4f52-5a26-4249434b454c"
+class Display(ABC):
+    def __init__(self, screen: '_curses._CursesWindow'):
+        self.screen = screen
+        self.done: bool = False
 
-VOLCANO_AUTO_OFF_TIME_UUID = "1011000c-5354-4f52-5a26-4249434b454c"
-VOLCANO_OPERATION_HOURS_UUID = "10110015-5354-4f52-5a26-4249434b454c"
+    @abstractmethod
+    def make_display(self) -> None:
+        pass
 
-VOLCANO_SERIAL_NUMBER_UUID = "10100008-5354-4f52-5a26-4249434b454c"
-VOLCANO_FIRMWARE_VERSION_UUID = "10100003-5354-4f52-5a26-4249434b454c"
-VOLCANO_BLE_FIRMWARE_VERSION_UUID = "10100004-5354-4f52-5a26-4249434b454c"
+    @abstractmethod
+    def handle_char(self, char: int) -> None:
+        pass
 
-VOLCANO_STATUS_REGISTER_UUID = "1010000c-5354-4f52-5a26-4249434b454c"
+    def set_exit(self) -> None:
+        self.done = True
 
-VOLCANO_HEATER_ON_MASK = b"\x00\x20"
-VOLCANO_PUMP_ON_MASK = b"\x20\x00"
+    async def run(self) -> None:
+        self.make_display()
 
-async def main(ble_address: str):
-    print(ble_address)
-    device = await BleakScanner.find_device_by_address(ble_address, timeout=20.0)
-    print(device)
-    print("FUCK")
-    if not device:
-        raise BleakError(f"A device with address {ble_address} could not be found.")
-    async with BleakClient(device) as client:
-        print(client)
-        await asyncio.sleep(2)
-        result = await client.read_gatt_char(VOLCANO_TEMP_TARGET_UUID)
-        print(result)
-        print("Services:")
-        for service in svcs:
-            print(service)
+        while not self.done:
+            await asyncio.sleep(0.1)
+            char = self.screen.getch()
+            if char == curses.ERR:
+                await asyncio.sleep(0.1)
+            elif char == curses.KEY_RESIZE:
+                self.make_display()
+            else:
+                await self.handle_char(char)
+
+            self.make_display()
+
+
+class MyDisplay(Display):
+    def __init__(self, screen: '_curses._CursesWindow', volcano: Volcano):
+        self.volcano = volcano
+        super().__init__(screen)
+
+    def make_display(self) -> None:
+        h, w = self.screen.getmaxyx()
+
+        cy = math.floor(h / 2)
+        cx = math.floor(w / 2)
+
+        self.screen.erase()
+
+        heater_on = 'ON' if self.volcano.heater_on else 'OFF'
+        pump_on = 'ON' if self.volcano.pump_on else 'OFF'
+
+        self.screen.addstr(cy - 2, cx - 7, f'Heater: ')
+        self.screen.addstr(heater_on, curses.color_pair(1 if self.volcano.heater_on else 2))
+        self.screen.addstr(cy - 1, cx - 5, f'Pump: ')
+        self.screen.addstr(pump_on, curses.color_pair(1 if self.volcano.pump_on else 2))
+        self.screen.addstr(cy, cx - 12, f'Target Temp: {self.volcano.target_temperature}')
+        self.screen.addstr(cy + 1, cx - 13, f'Current Temp: {self.volcano.temperature}')
+
+        self.screen.addstr(h - 4, 0, f'')
+        self.screen.addstr(h - 4, 0, f'Serial number: {self.volcano._serial_number}')
+        self.screen.addstr(h - 4, 0, f'Firmware version: {self.volcano._firmware_version}')
+
+        self.screen.refresh()
+
+    async def handle_char(self, char: int) -> None:
+        if chr(char) == "q":
+            self.set_exit()
+        if char == curses.KEY_UP:
+            await self.volcano.set_target_temperature(self.volcano.target_temperature + 1)
+        elif char == curses.KEY_DOWN:
+            await self.volcano.set_target_temperature(self.volcano.target_temperature - 1)
+        elif char == curses.KEY_LEFT:
+            self.volcano.toggle_heater()
+        elif char == curses.KEY_RIGHT:
+            self.volcano.toggle_pump()
+
+
+async def display_main(screen):
+    _LOGGER.info('STARTING APPLICATION')
+
+    curses.curs_set(0)
+    curses.noecho()
+    curses.cbreak()
+    curses.use_default_colors()
+
+    curses.init_pair(1, curses.COLOR_GREEN, -1)
+    curses.init_pair(2, curses.COLOR_RED, -1)
+
+    screen.nodelay(True)
+    screen.clear()
+    screen.timeout(100)
+
+    h, w = screen.getmaxyx()
+
+    cy = math.floor(h / 2)
+    cx = math.floor(w / 2)
+
+    screen.addstr(cy, cx - 7, 'CONNECTING...')
+
+    screen.refresh()
+
+    volcano = Volcano(VOLCANO_MAC)
+    display = MyDisplay(screen, volcano)
+
+    await volcano.connect()
+    await display.run()
+
+
+def main(stdscr) -> None:
+    return asyncio.run(display_main(stdscr))
 
 
 if __name__ == "__main__":
-    asyncio.run(main(sys.argv[1] if len(sys.argv) == 2 else ADDRESS))
+    curses.wrapper(main)
