@@ -2,6 +2,7 @@ import asyncio
 import curses
 import math
 import logging
+import signal
 from abc import ABC, abstractmethod
 from volcano import Volcano
 
@@ -68,9 +69,10 @@ class MyDisplay(Display):
         self.screen.addstr(cy, cx - 12, f'Target Temp: {self.volcano.target_temperature}')
         self.screen.addstr(cy + 1, cx - 13, f'Current Temp: {self.volcano.temperature}')
 
-        self.screen.addstr(h - 4, 0, f'')
-        self.screen.addstr(h - 4, 0, f'Serial number: {self.volcano._serial_number}')
-        self.screen.addstr(h - 4, 0, f'Firmware version: {self.volcano._firmware_version}')
+        self.screen.addstr(h - 5, 0, f'Auto off time: {self.volcano._auto_off_time}')
+        self.screen.addstr(h - 4, 0, f'Operation hour: {self.volcano._operation_hours}')
+        self.screen.addstr(h - 2, 0, f'Serial number: {self.volcano._serial_number}')
+        self.screen.addstr(h - 1, 0, f'Firmware version: {self.volcano._firmware_version}')
 
         self.screen.refresh()
 
@@ -82,9 +84,9 @@ class MyDisplay(Display):
         elif char == curses.KEY_DOWN:
             await self.volcano.set_target_temperature(self.volcano.target_temperature - 1)
         elif char == curses.KEY_LEFT:
-            self.volcano.toggle_heater()
+            await self.volcano.toggle_heater()
         elif char == curses.KEY_RIGHT:
-            self.volcano.toggle_pump()
+            await self.volcano.toggle_pump()
 
 
 async def display_main(screen):
@@ -114,8 +116,24 @@ async def display_main(screen):
     volcano = Volcano(VOLCANO_MAC)
     display = MyDisplay(screen, volcano)
 
+    async def disconnect():
+        await volcano.disconnect()
+        quit()
+
+    def callback(*args):
+        asyncio.create_task(disconnect())
+
+    signal.signal(signal.SIGINT, callback)
+    signal.signal(signal.SIGTERM, callback)
+
     await volcano.connect()
-    await display.run()
+
+    asyncio.create_task(volcano.initialize_metrics())
+
+    try:
+        await display.run()
+    finally:
+        disconnect()
 
 
 def main(stdscr) -> None:
