@@ -2,9 +2,7 @@ import logging
 import asyncio
 import struct
 
-from connection import BTLEConnection
-
-logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
+from volcanobt.connection import BTLEConnection
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +30,7 @@ VOLCANO_STATUS_REGISTER_UUID = "1010000c-5354-4f52-5a26-4249434b454c"
 VOLCANO_HEATER_ON_MASK = b"\x00\x20"
 VOLCANO_PUMP_ON_MASK = b"\x20\x00"
 
-class Volcano():
+class Volcano:
     """Volcano entity class"""
 
     def __init__(self, mac: str):
@@ -47,6 +45,10 @@ class Volcano():
         self._serial_number = None
         self._firmware_version = None
         self._ble_firmware_version = None
+
+        self._temperature_changed_callback = None
+        self._target_temperature_changed_callback = None
+        self._status_changed_callback = None
 
     async def connect(self):
         self._conn = BTLEConnection(self._mac)
@@ -76,19 +78,23 @@ class Volcano():
         temp_target_char = hw_service.get_characteristic(VOLCANO_TEMP_TARGET_UUID)
         status_char = stat_service.get_characteristic(VOLCANO_STATUS_REGISTER_UUID)
 
-        await self._conn.start_notify(temp_curr_char, self.temperature_changed)
-        await self._conn.start_notify(temp_target_char, self.target_temperature_changed)
-        await self._conn.start_notify(status_char, self.status_changed)
+        await self._conn.start_notify(temp_curr_char, self._temperature_changed)
+        await self._conn.start_notify(temp_target_char, self._target_temperature_changed)
+        await self._conn.start_notify(status_char, self._status_changed)
         _LOGGER.info('Notifications registered')
 
     @property
     def temperature(self):
         return self._temperature
 
-    def temperature_changed(self, sender, data):
-        temperature = struct.unpack('<I', data)[0] / 10
+    def on_temperature_changed(self, callback):
+        self._temperature_changed_callback = callback
 
-        self._temperature = round(temperature)
+    def _temperature_changed(self, sender, data):
+        temperature = round(struct.unpack('<I', data)[0] / 10)
+
+        self._temperature = temperature
+        self._temperature_changed_callback(temperature)
 
     async def read_temperature(self):
         _LOGGER.debug('Reading current temperature')
@@ -115,12 +121,16 @@ class Volcano():
 
         self._target_temperature = round(temperature)
 
-    def target_temperature_changed(self, sender, data):
-        temperature = struct.unpack('<I', data)[0] / 10
+    def _target_temperature_changed(self, sender, data):
+        temperature = round(struct.unpack('<I', data)[0] / 10)
 
         _LOGGER.debug(f"Target temperature changed: {temperature}")
 
-        self._target_temperature = round(temperature)
+        self._target_temperature = temperature
+        self._target_temperature_changed_callback(temperature)
+
+    def on_target_temperature_changed(self, callback):
+        self._target_temperature_changed_callback = callback
 
     async def read_target_temperature(self):
         _LOGGER.debug('Reading target temperature')
@@ -175,25 +185,35 @@ class Volcano():
     def pump_on(self):
         return self._pump_on
 
-    async def toggle_heater(self):
-        heater_uuid = VOLCANO_HEAT_OFF_UUID if self.heater_on else VOLCANO_HEAT_ON_UUID
+    async def set_heater(self,  state: bool):
+        heater_uuid = VOLCANO_HEAT_ON_UUID if state else VOLCANO_HEAT_OFF_UUID
         
         data = struct.pack('B', 0)
 
         await self._conn.write_gatt_char(heater_uuid, data)
 
-        self._heater_on = not self._heater_on
+        self._heater_on = state
 
-    async def toggle_pump(self):
-        pump_uuid = VOLCANO_PUMP_OFF_UUID if self.pump_on else VOLCANO_PUMP_ON_UUID
+    async def set_pump(self,  state: bool):
+        pump_uuid = VOLCANO_PUMP_ON_UUID if state else VOLCANO_PUMP_OFF_UUID
         
         data = struct.pack('B', 0)
 
         await self._conn.write_gatt_char(pump_uuid, data)
 
-        self._pump_on = not self._pump_on
+        self._pump_on = state
 
-    def status_changed(self, sender, data):
+    async def toggle_heater(self):
+        await self.set_heater(not self.heater_on)
+
+    async def toggle_pump(self):
+        await self.set_pump(not self.pump_on)
+
+    def on_status_changed(self, callback):
+        self._status_changed_callback = callback
+
+
+    def _status_changed(self, sender, data):
         _LOGGER.debug("Connection status update")
         data = int.from_bytes(data, byteorder="little")
 

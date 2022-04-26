@@ -13,7 +13,7 @@ class BTLEConnection():
         self._mac = mac
 
     async def connect(self):
-        device = await BleakScanner.find_device_by_address(self._mac, timeout=20.0)
+        device = await BleakScanner.find_device_by_address(self._mac, timeout=20.0, adapter="hci0")
 
         _LOGGER.info(device)
 

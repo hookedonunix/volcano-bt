@@ -4,7 +4,7 @@ import math
 import logging
 import signal
 from abc import ABC, abstractmethod
-from volcano import Volcano
+from volcanobt.volcano import Volcano
 
 import _curses
 
