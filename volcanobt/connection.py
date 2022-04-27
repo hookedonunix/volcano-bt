@@ -4,7 +4,7 @@ import asyncio
 
 from bleak import BleakScanner, BleakClient
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger()
 
 class BTLEConnection():
     """BTLE Connection class"""
@@ -13,7 +13,7 @@ class BTLEConnection():
         self._mac = mac
 
     async def connect(self):
-        device = await BleakScanner.find_device_by_address(self._mac, timeout=20.0, adapter="hci0")
+        device = await BleakScanner.find_device_by_address(self._mac, timeout=20.0)
 
         _LOGGER.info(device)
 
@@ -22,14 +22,13 @@ class BTLEConnection():
         _LOGGER.info('Before client connect')
         await self._conn.connect()
         _LOGGER.info('After client connect')
-        await asyncio.sleep(2.0)
-        self._services = await self._conn.get_services()
     
     async def disconnect(self):
         await self._conn.disconnect()
 
-    async def is_connected(self):
-        return await self._conn.is_connected()
+    @property
+    def is_connected(self):
+        return self._conn.is_connected()
 
     async def get_service(self, service_uuid: str):
         return self.services.get_service(service_uuid)

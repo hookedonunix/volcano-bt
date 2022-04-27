@@ -4,7 +4,7 @@ import struct
 
 from volcanobt.connection import BTLEConnection
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger()
 
 VOLCANO_STAT_SERVICE_UUID = "10100000-5354-4f52-5a26-4249434b454c"
 VOLCANO_HW_SERVICE_UUID = "10110000-5354-4f52-5a26-4249434b454c"
@@ -48,17 +48,20 @@ class Volcano:
 
         self._temperature_changed_callback = None
         self._target_temperature_changed_callback = None
-        self._status_changed_callback = None
+        self._heater_changed_callback = None
+        self._pump_changed_callback = None
 
     async def connect(self):
         self._conn = BTLEConnection(self._mac)
         await self._conn.connect()
-        await asyncio.sleep(1.0)
         await self.register_notifications()
-        await asyncio.sleep(1.0)
 
     async def disconnect(self):
-        await self._conn.disconnect()
+        return await self._conn.disconnect()
+
+    @property
+    def is_connected(self):
+        return self._conn.is_connected
 
     async def initialize_metrics(self):
         _LOGGER.info('Initializing values')
@@ -209,9 +212,11 @@ class Volcano:
     async def toggle_pump(self):
         await self.set_pump(not self.pump_on)
 
-    def on_status_changed(self, callback):
-        self._status_changed_callback = callback
+    def on_heater_changed(self, callback):
+        self._heater_changed_callback = callback
 
+    def on_pump_changed(self, callback):
+        self._pump_changed_callback = callback
 
     def _status_changed(self, sender, data):
         _LOGGER.debug("Connection status update")
@@ -232,3 +237,6 @@ class Volcano:
             self._pump_on = False
         else:
             self._pump_on = True
+
+        self._heater_changed_callback(self._heater_on)
+        self._pump_changed_callback(self._pump_on)
