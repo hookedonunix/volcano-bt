@@ -18,7 +18,7 @@ class BTLEConnection():
         _LOGGER.info(device)
 
         _LOGGER.info('Before client initialization')
-        self._conn = BleakClient(device)
+        self._conn = BleakClient(device, disconnected_callback=self._disconnected_callback)
         _LOGGER.info('Before client connect')
         await self._conn.connect()
         _LOGGER.info('After client connect')
@@ -45,6 +45,10 @@ class BTLEConnection():
 
     async def read_gatt_char(self, service):
         return await self._conn.read_gatt_char(service)
+
+    def _disconnected_callback(self, client):
+        _LOGGER.error("DISCONNECTED FOR SOME REASON")
+        _LOGGER.error(client)
 
     @property
     def services(self):

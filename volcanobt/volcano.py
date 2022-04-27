@@ -51,7 +51,7 @@ class Volcano:
         self._status_changed_callback = None
 
     async def connect(self):
-        self._conn = BTLEConnection(self._mac)
+        self._conn = BTLEConnection(self._mac, disconnected_callback=self._disconnected_callback)
         await self._conn.connect()
         await asyncio.sleep(1.0)
         await self.register_notifications()
