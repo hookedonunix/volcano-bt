@@ -22,6 +22,7 @@ class BTLEConnection():
         _LOGGER.info('Before client connect')
         await self._conn.connect()
         _LOGGER.info('After client connect')
+        self._services = await self._conn.get_services()
     
     async def disconnect(self):
         await self._conn.disconnect()
