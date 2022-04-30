@@ -29,7 +29,7 @@ class BTLEConnection():
 
     @property
     def is_connected(self):
-        return self._conn.is_connected()
+        return self._conn.is_connected
 
     async def get_service(self, service_uuid: str):
         return self.services.get_service(service_uuid)
