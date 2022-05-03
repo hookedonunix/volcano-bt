@@ -4,7 +4,7 @@ import asyncio
 
 from bleak import BleakScanner, BleakClient
 
-_LOGGER = logging.getLogger()
+_LOGGER = logging.getLogger(__name__)
 
 class BTLEConnection():
     """BTLE Connection class"""

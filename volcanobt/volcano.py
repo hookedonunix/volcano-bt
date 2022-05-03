@@ -27,8 +27,11 @@ VOLCANO_BLE_FIRMWARE_VERSION_UUID = "10100004-5354-4f52-5a26-4249434b454c"
 
 VOLCANO_STATUS_REGISTER_UUID = "1010000c-5354-4f52-5a26-4249434b454c"
 
+VOLCANO_VIBRATION_REGISTER_UUID = "1010000e-5354-4f52-5a26-4249434b454c"
+
 VOLCANO_HEATER_ON_MASK = b"\x00\x20"
 VOLCANO_PUMP_ON_MASK = b"\x20\x00"
+VOLCANO_VIBRATION_ENABLED_MASK = b"\x04\x00"
 
 class Volcano:
     """Volcano entity class"""
@@ -40,6 +43,7 @@ class Volcano:
         self._target_temperature = 0
         self._heater_on = False
         self._pump_on = False
+        self._vibration_enabled = False
         self._auto_off_time = None
         self._operation_hours = None
         self._serial_number = None
@@ -72,6 +76,7 @@ class Volcano:
         await self.read_operation_hours()
         await self.read_serial_number()
         await self.read_firmware_version()
+        await self.read_vibration_status_register()
 
     async def register_notifications(self):
         hw_service = await self._conn.get_service(VOLCANO_HW_SERVICE_UUID)
@@ -151,6 +156,10 @@ class Volcano:
 
         _LOGGER.info(self._serial_number)
 
+    @property
+    def firmware_version(self):
+        return self._firmware_version
+
     async def read_firmware_version(self):
         _LOGGER.debug('Reading firmware version')
 
@@ -158,7 +167,7 @@ class Volcano:
 
         self._firmware_version = result.decode('utf-8')
 
-        _LOGGER.info(self._serial_number)
+        _LOGGER.info(self._firmware_version)
 
     async def read_auto_off_time(self):
         _LOGGER.debug('Reading auto off time')
@@ -179,6 +188,67 @@ class Volcano:
         self._operation_hours = int(struct.unpack('I', result)[0])
 
         _LOGGER.info(self._operation_hours)
+
+    async def read_status_register(self):
+        _LOGGER.debug('Reading operation hours')
+
+        result = await self._conn.read_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID)
+
+        data = int.from_bytes(result, byteorder="little")
+
+        _LOGGER.info(result)
+
+        heater_mask = int.from_bytes(VOLCANO_HEATER_ON_MASK, byteorder="big")
+        pump_mask = int.from_bytes(VOLCANO_PUMP_ON_MASK, byteorder="big")
+
+        if (data & heater_mask) == 0:
+            self._heater_on = False
+        else:
+            self._heater_on = True
+
+        if (data & pump_mask) == 0:
+            self._pump_on = False
+        else:
+            self._pump_on = True
+
+        self._heater_changed_callback(self._heater_on)
+        self._pump_changed_callback(self._pump_on)
+
+    @property
+    def vibration_enabled(self):
+        return self._vibration_enabled
+
+    async def read_vibration_status_register(self):
+        _LOGGER.debug('Reading operation hours')
+
+        result = await self._conn.read_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID)
+
+        data = int.from_bytes(result, byteorder="little")
+
+        _LOGGER.info(result)
+
+        vibration_mask = int.from_bytes(VOLCANO_VIBRATION_ENABLED_MASK, byteorder="big")
+
+        _LOGGER.info(result)
+
+        if (data & vibration_mask) == 0:
+            self._vibration_enabled = False
+        else:
+            self._vibration_enabled = True
+
+        _LOGGER.info(self._vibration_enabled)
+
+    async def set_vibration_enabled(self,  state: bool):
+        vibration_mask = int.from_bytes(VOLCANO_VIBRATION_ENABLED_MASK, byteorder="big")
+
+        data = struct.pack('I', vibration_mask if state else vibration_mask + 1)
+
+        _LOGGER.info(vibration_mask)
+        _LOGGER.info(data)
+
+        await self._conn.write_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID, data)
+
+        self._heater_on = state
 
     @property
     def heater_on(self):
