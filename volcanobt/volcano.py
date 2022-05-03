@@ -4,7 +4,7 @@ import struct
 
 from volcanobt.connection import BTLEConnection
 
-_LOGGER = logging.getLogger()
+_LOGGER = logging.getLogger(__name__)
 
 VOLCANO_STAT_SERVICE_UUID = "10100000-5354-4f52-5a26-4249434b454c"
 VOLCANO_HW_SERVICE_UUID = "10110000-5354-4f52-5a26-4249434b454c"

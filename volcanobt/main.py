@@ -8,11 +8,7 @@ from volcanobt.volcano import Volcano
 
 import _curses
 
-logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
-
 _LOGGER = logging.getLogger(__name__)
-
-VOLCANO_MAC = 'FB:17:6B:85:5B:C2'
 
 class Display(ABC):
     def __init__(self, screen: '_curses._CursesWindow'):
