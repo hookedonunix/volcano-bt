@@ -2,6 +2,8 @@ import logging
 import asyncio
 import struct
 
+from dbus_next import PropertyAccess
+
 from volcanobt.connection import BTLEConnection
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,7 +21,10 @@ VOLCANO_PUMP_ON_UUID = "10110013-5354-4f52-5a26-4249434b454c"
 VOLCANO_PUMP_OFF_UUID = "10110014-5354-4f52-5a26-4249434b454c"
 
 VOLCANO_AUTO_OFF_TIME_UUID = "1011000c-5354-4f52-5a26-4249434b454c"
+VOLCANO_SHUT_OFF_TIME_UUID = "1011000d-5354-4f52-5a26-4249434b454c"
 VOLCANO_OPERATION_HOURS_UUID = "10110015-5354-4f52-5a26-4249434b454c"
+
+VOLCANO_LED_BRIGHTNESS_UUID = "10110005-5354-4f52-5a26-4249434b454c"
 
 VOLCANO_SERIAL_NUMBER_UUID = "10100008-5354-4f52-5a26-4249434b454c"
 VOLCANO_FIRMWARE_VERSION_UUID = "10100003-5354-4f52-5a26-4249434b454c"
@@ -45,10 +50,13 @@ class Volcano:
         self._pump_on = False
         self._vibration_enabled = False
         self._auto_off_time = None
+        self._shut_off_time = None
         self._operation_hours = None
         self._serial_number = None
         self._firmware_version = None
         self._ble_firmware_version = None
+        self._led_brightness = None
+
 
         self._temperature_changed_callback = None
         self._target_temperature_changed_callback = None
@@ -67,6 +75,21 @@ class Volcano:
     def is_connected(self):
         return self._conn.is_connected
 
+    async def read_attributes(self):
+        _LOGGER.info('Reading attributes')
+
+        return await asyncio.gather(
+            self.read_temperature(),
+            self.read_target_temperature(),
+            self.read_auto_off_time(),
+            self.read_operation_hours(),
+            self.read_vibration_status_register(),
+            self.read_led_brightness(),
+            self.read_serial_number(),
+            self.read_firmware_version(),
+            self.read_ble_firmware_version(),
+        )
+
     async def initialize_metrics(self):
         _LOGGER.info('Initializing values')
 
@@ -74,9 +97,11 @@ class Volcano:
         await self.read_target_temperature()
         await self.read_auto_off_time()
         await self.read_operation_hours()
+        await self.read_vibration_status_register()
+        await self.read_led_brightness()
         await self.read_serial_number()
         await self.read_firmware_version()
-        await self.read_vibration_status_register()
+        await self.read_ble_firmware_version()
 
     async def register_notifications(self):
         hw_service = await self._conn.get_service(VOLCANO_HW_SERVICE_UUID)
@@ -147,6 +172,10 @@ class Volcano:
 
         self._target_temperature = round(int(struct.unpack('<I', result)[0] / 10))
 
+    @property
+    def serial_number(self):
+        return self._serial_number
+
     async def read_serial_number(self):
         _LOGGER.debug('Reading serial number')
 
@@ -169,6 +198,17 @@ class Volcano:
 
         _LOGGER.info(self._firmware_version)
 
+    @property
+    def ble_firmware_version(self):
+        return self._ble_firmware_version
+
+    async def read_ble_firmware_version(self):
+        _LOGGER.debug('Reading BLE firmware version')
+
+    @property
+    def auto_off_time(self):
+        return self._auto_off_time
+
     async def read_auto_off_time(self):
         _LOGGER.debug('Reading auto off time')
 
@@ -177,6 +217,19 @@ class Volcano:
         self._auto_off_time = int(struct.unpack('H', result)[0])
 
         _LOGGER.info(self._auto_off_time)
+
+    @property
+    def shut_off_time(self):
+        return self._shut_off_time
+
+    async def read_shut_off_time(self):
+        _LOGGER.debug('Reading shutoff time')
+
+        result = await self._conn.read_gatt_char(VOLCANO_SHUT_OFF_TIME_UUID)
+
+    @property
+    def operation_hours(self):
+        return self._operation_hours
 
     async def read_operation_hours(self):
         _LOGGER.debug('Reading operation hours')
@@ -189,30 +242,18 @@ class Volcano:
 
         _LOGGER.info(self._operation_hours)
 
-    async def read_status_register(self):
+    @property
+    def led_brightness(self):
+        return self._led_brightness
+
+    async def read_led_brightness(self):
         _LOGGER.debug('Reading operation hours')
 
         result = await self._conn.read_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID)
 
-        data = int.from_bytes(result, byteorder="little")
+        self._led_brightness = int(struct.unpack('H', result)[0])
 
-        _LOGGER.info(result)
-
-        heater_mask = int.from_bytes(VOLCANO_HEATER_ON_MASK, byteorder="big")
-        pump_mask = int.from_bytes(VOLCANO_PUMP_ON_MASK, byteorder="big")
-
-        if (data & heater_mask) == 0:
-            self._heater_on = False
-        else:
-            self._heater_on = True
-
-        if (data & pump_mask) == 0:
-            self._pump_on = False
-        else:
-            self._pump_on = True
-
-        self._heater_changed_callback(self._heater_on)
-        self._pump_changed_callback(self._pump_on)
+        _LOGGER.debug(self.led_brightness)
 
     @property
     def vibration_enabled(self):
@@ -281,6 +322,32 @@ class Volcano:
 
     async def toggle_pump(self):
         await self.set_pump(not self.pump_on)
+
+    async def read_status_register(self):
+        _LOGGER.debug('Reading operation hours')
+
+        result = await self._conn.read_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID)
+
+        data = int.from_bytes(result, byteorder="little")
+
+        _LOGGER.info(result)
+
+        heater_mask = int.from_bytes(VOLCANO_HEATER_ON_MASK, byteorder="big")
+        pump_mask = int.from_bytes(VOLCANO_PUMP_ON_MASK, byteorder="big")
+
+        if (data & heater_mask) == 0:
+            self._heater_on = False
+        else:
+            self._heater_on = True
+
+        if (data & pump_mask) == 0:
+            self._pump_on = False
+        else:
+            self._pump_on = True
+
+        self._heater_changed_callback(self._heater_on)
+        self._pump_changed_callback(self._pump_on)
+
 
     def on_heater_changed(self, callback):
         self._heater_changed_callback = callback
