@@ -1,12 +1,14 @@
 import logging
 import asyncio
 import struct
-
-from dbus_next import PropertyAccess
+from typing import Final
 
 from volcanobt.connection import BTLEConnection
 
 _LOGGER = logging.getLogger(__name__)
+
+TEMP_CELSIUS: Final = "°C"
+TEMP_FAHRENHEIT: Final = "°F"
 
 VOLCANO_STAT_SERVICE_UUID = "10100000-5354-4f52-5a26-4249434b454c"
 VOLCANO_HW_SERVICE_UUID = "10110000-5354-4f52-5a26-4249434b454c"
@@ -37,6 +39,8 @@ VOLCANO_VIBRATION_REGISTER_UUID = "1010000e-5354-4f52-5a26-4249434b454c"
 
 VOLCANO_HEATER_ON_MASK = b"\x00\x20"
 VOLCANO_PUMP_ON_MASK = b"\x20\x00"
+
+VOLCANO_AUTO_OFF_ENABLED_MASK = b"\x02\x00"
 VOLCANO_VIBRATION_ENABLED_MASK = b"\x04\x00"
 VOLCANO_TEMP_UNIT_FAHRENHEIT_ENABLED_MASK = b"\x02\x00"
 
@@ -50,7 +54,6 @@ class Volcano:
         self._target_temperature = 0
         self._heater_on = False
         self._pump_on = False
-        self._vibration_enabled = False
         self._auto_off_time = None
         self._shut_off_time = None
         self._operation_hours = None
@@ -58,6 +61,10 @@ class Volcano:
         self._firmware_version = None
         self._ble_firmware_version = None
         self._led_brightness = None
+        self._temperature_unit = None
+
+        self._auto_off_enabled = False
+        self._vibration_enabled = False
 
 
         self._temperature_changed_callback = None
@@ -92,6 +99,7 @@ class Volcano:
             self.read_firmware_version(),
             self.read_ble_firmware_version(),
             self.read_temperature_unit_register(),
+            self.read_status_register(),
         )
 
     async def initialize_metrics(self):
@@ -108,6 +116,7 @@ class Volcano:
         await self.read_firmware_version()
         await self.read_ble_firmware_version()
         await self.read_temperature_unit_register()
+        await self.read_status_register()
 
     async def register_notifications(self):
         hw_service = await self._conn.get_service(VOLCANO_HW_SERVICE_UUID)
@@ -255,9 +264,23 @@ class Volcano:
     async def read_led_brightness(self):
         _LOGGER.debug('Reading led brightness')
 
-        result = await self._conn.read_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID)
+        result = await self._conn.read_gatt_char(VOLCANO_LED_BRIGHTNESS_UUID)
 
-        self._led_brightness = int(struct.unpack('<I', result)[0] / 10)
+        self._led_brightness = int(struct.unpack('H', result)[0] / 10)
+
+    async def set_led_brightness(self, brightness: int):
+        _LOGGER.info(brightness)
+        _LOGGER.info(self._led_brightness)
+
+        data = struct.pack('H', brightness)
+
+        hw_service = await self._conn.get_service(VOLCANO_HW_SERVICE_UUID)
+
+        characteristic = hw_service.get_characteristic(VOLCANO_LED_BRIGHTNESS_UUID)
+
+        await self._conn.write_gatt_char(characteristic, data)
+
+        self._led_brightness = round(brightness)
 
     @property
     def vibration_enabled(self):
@@ -280,7 +303,7 @@ class Volcano:
     async def set_vibration_enabled(self,  state: bool):
         vibration_mask = int.from_bytes(VOLCANO_VIBRATION_ENABLED_MASK, byteorder="big")
 
-        data = struct.pack('I', vibration_mask if state else vibration_mask + 1)
+        data = struct.pack('I', vibration_mask if state else vibration_mask + 65536)
 
         await self._conn.write_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID, data)
 
@@ -295,14 +318,23 @@ class Volcano:
 
         result = await self._conn.read_gatt_char(VOLCANO_TEMP_UNIT_REGISTER_UUID)
 
-        data = int.from_bytes(result, byteorder="little")
+        data = int.from_bytes(result[-2:], byteorder="big")
 
         temp_unit_mask = int.from_bytes(VOLCANO_TEMP_UNIT_FAHRENHEIT_ENABLED_MASK, byteorder="big")
 
         if (data & temp_unit_mask) == 0:
-            self._temperature_unit
+            self._temperature_unit = TEMP_CELSIUS
+        else:
+            self._temperature_unit = TEMP_FAHRENHEIT
 
+    async def set_temperature_unit(self, unit):
+        temp_unit_mask = int.from_bytes(VOLCANO_TEMP_UNIT_FAHRENHEIT_ENABLED_MASK, byteorder="big")
 
+        data = struct.pack('<L', temp_unit_mask if unit == TEMP_CELSIUS else temp_unit_mask + 65536)
+
+        await self._conn.write_gatt_char(VOLCANO_TEMP_UNIT_REGISTER_UUID, data)
+
+        self._temperature_unit = unit
 
     @property
     def heater_on(self):
@@ -341,10 +373,11 @@ class Volcano:
 
         result = await self._conn.read_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID)
 
-        data = int.from_bytes(result, byteorder="little")
+        data = int.from_bytes(result[-2:], byteorder="big")
 
         heater_mask = int.from_bytes(VOLCANO_HEATER_ON_MASK, byteorder="big")
         pump_mask = int.from_bytes(VOLCANO_PUMP_ON_MASK, byteorder="big")
+        auto_off_mask = int.from_bytes(VOLCANO_AUTO_OFF_ENABLED_MASK, byteorder="big")
 
         if (data & heater_mask) == 0:
             self._heater_on = False
@@ -355,6 +388,11 @@ class Volcano:
             self._pump_on = False
         else:
             self._pump_on = True
+
+        if (data & auto_off_mask) == 0:
+            self._auto_off_enabled = True
+        else:
+            self._auto_off_enabled = False
 
         self._heater_changed_callback(self._heater_on)
         self._pump_changed_callback(self._pump_on)
