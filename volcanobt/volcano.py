@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import struct
-from typing import Final
+from typing import Callable, Union, Final
 
 from volcanobt.connection import BTLEConnection
 
@@ -72,22 +72,24 @@ class Volcano:
         self._heater_changed_callback = None
         self._pump_changed_callback = None
 
-    async def connect(self):
+    async def connect(self) -> bool:
         self._conn = BTLEConnection(self._mac)
-        await self._conn.connect()
+        result = await self._conn.connect()
         await self.register_notifications()
 
-    async def disconnect(self):
+        return result
+
+    async def disconnect(self) -> bool:
         return await self._conn.disconnect()
 
     @property
-    def is_connected(self):
+    def is_connected(self) -> bool:
         return self._conn.is_connected
 
-    async def read_attributes(self):
-        _LOGGER.info('Reading attributes')
+    async def read_attributes(self) -> None:
+        _LOGGER.debug('Reading attributes')
 
-        return await asyncio.gather(
+        await asyncio.gather(
             self.read_temperature(),
             self.read_target_temperature(),
             self.read_auto_off_time(),
@@ -102,7 +104,7 @@ class Volcano:
             self.read_status_register(),
         )
 
-    async def initialize_metrics(self):
+    async def initialize_metrics(self) -> None:
         _LOGGER.info('Initializing values')
 
         await self.read_temperature()
@@ -118,7 +120,7 @@ class Volcano:
         await self.read_temperature_unit_register()
         await self.read_status_register()
 
-    async def register_notifications(self):
+    async def register_notifications(self) -> None:
         hw_service = await self._conn.get_service(VOLCANO_HW_SERVICE_UUID)
         stat_service = await self._conn.get_service(VOLCANO_STAT_SERVICE_UUID)
 
@@ -132,19 +134,19 @@ class Volcano:
         _LOGGER.info('Notifications registered')
 
     @property
-    def temperature(self):
+    def temperature(self) -> int:
         return self._temperature
 
-    def on_temperature_changed(self, callback):
+    def on_temperature_changed(self, callback: Callable[[int], None]) -> None:
         self._temperature_changed_callback = callback
 
-    def _temperature_changed(self, sender, data):
+    def _temperature_changed(self, sender: int, data: bytearray) -> None:
         temperature = round(struct.unpack('<I', data)[0] / 10)
 
         self._temperature = temperature
         self._temperature_changed_callback(temperature)
 
-    async def read_temperature(self):
+    async def read_temperature(self) -> None:
         _LOGGER.debug('Reading current temperature')
 
         result = await self._conn.read_gatt_char(VOLCANO_TEMP_CURR_UUID)
@@ -152,13 +154,10 @@ class Volcano:
         self._temperature = round(int(struct.unpack('<I', result)[0] / 10))
 
     @property
-    def target_temperature(self):
+    def target_temperature(self) -> int:
         return self._target_temperature
 
-    async def set_target_temperature(self, temperature):
-        _LOGGER.info(temperature)
-        _LOGGER.info(self._target_temperature)
-
+    async def set_target_temperature(self, temperature: int) -> None:
         data = struct.pack('<I', temperature * 10)
 
         hw_service = await self._conn.get_service(VOLCANO_HW_SERVICE_UUID)
@@ -169,18 +168,16 @@ class Volcano:
 
         self._target_temperature = round(temperature)
 
-    def _target_temperature_changed(self, sender, data):
+    def _target_temperature_changed(self, sender: int, data: bytearray) -> None:
         temperature = round(struct.unpack('<I', data)[0] / 10)
-
-        _LOGGER.debug(f"Target temperature changed: {temperature}")
 
         self._target_temperature = temperature
         self._target_temperature_changed_callback(temperature)
 
-    def on_target_temperature_changed(self, callback):
+    def on_target_temperature_changed(self, callback: Callable[[int], None]) -> None:
         self._target_temperature_changed_callback = callback
 
-    async def read_target_temperature(self):
+    async def read_target_temperature(self) -> None:
         _LOGGER.debug('Reading target temperature')
 
         result = await self._conn.read_gatt_char(VOLCANO_TEMP_TARGET_UUID)
@@ -188,36 +185,32 @@ class Volcano:
         self._target_temperature = round(int(struct.unpack('<I', result)[0] / 10))
 
     @property
-    def serial_number(self):
+    def serial_number(self) -> Union[str, None]:
         return self._serial_number
 
-    async def read_serial_number(self):
+    async def read_serial_number(self) -> None:
         _LOGGER.debug('Reading serial number')
 
         result = await self._conn.read_gatt_char(VOLCANO_SERIAL_NUMBER_UUID)
 
         self._serial_number = result.decode('utf-8')
 
-        _LOGGER.info(self._serial_number)
-
     @property
-    def firmware_version(self):
+    def firmware_version(self) -> Union[str, None]:
         return self._firmware_version
 
-    async def read_firmware_version(self):
+    async def read_firmware_version(self) -> None:
         _LOGGER.debug('Reading firmware version')
 
         result = await self._conn.read_gatt_char(VOLCANO_FIRMWARE_VERSION_UUID)
 
         self._firmware_version = result.decode('utf-8')
 
-        _LOGGER.info(self._firmware_version)
-
     @property
-    def ble_firmware_version(self):
+    def ble_firmware_version(self) -> Union[str, None]:
         return self._ble_firmware_version
 
-    async def read_ble_firmware_version(self):
+    async def read_ble_firmware_version(self) -> None:
         _LOGGER.debug('Reading BLE firmware version')
 
         result = await self._conn.read_gatt_char(VOLCANO_BLE_FIRMWARE_VERSION_UUID)
@@ -225,10 +218,10 @@ class Volcano:
         self._ble_firmware_version = result.decode('utf-8')
 
     @property
-    def auto_off_time(self):
+    def auto_off_time(self) -> Union[int, None]:
         return self._auto_off_time
 
-    async def read_auto_off_time(self):
+    async def read_auto_off_time(self) -> None:
         _LOGGER.debug('Reading auto off time')
 
         result = await self._conn.read_gatt_char(VOLCANO_AUTO_OFF_TIME_UUID)
@@ -236,10 +229,10 @@ class Volcano:
         self._auto_off_time = int(struct.unpack('H', result)[0])
 
     @property
-    def shut_off_time(self):
+    def shut_off_time(self) -> Union[int, None]:
         return self._shut_off_time
 
-    async def read_shut_off_time(self):
+    async def read_shut_off_time(self) -> None:
         _LOGGER.debug('Reading shutoff time')
 
         result = await self._conn.read_gatt_char(VOLCANO_SHUT_OFF_TIME_UUID)
@@ -247,10 +240,10 @@ class Volcano:
         self._shut_off_time = int(struct.unpack('H', result)[0])
 
     @property
-    def operation_hours(self):
+    def operation_hours(self) -> Union[int, None]:
         return self._operation_hours
 
-    async def read_operation_hours(self):
+    async def read_operation_hours(self) -> None:
         _LOGGER.debug('Reading operation hours')
 
         result = await self._conn.read_gatt_char(VOLCANO_OPERATION_HOURS_UUID)
@@ -258,20 +251,17 @@ class Volcano:
         self._operation_hours = int(struct.unpack('I', result)[0])
 
     @property
-    def led_brightness(self):
+    def led_brightness(self) -> Union[int, None]:
         return self._led_brightness
 
-    async def read_led_brightness(self):
+    async def read_led_brightness(self) -> None:
         _LOGGER.debug('Reading led brightness')
 
         result = await self._conn.read_gatt_char(VOLCANO_LED_BRIGHTNESS_UUID)
 
         self._led_brightness = int(struct.unpack('H', result)[0] / 10)
 
-    async def set_led_brightness(self, brightness: int):
-        _LOGGER.info(brightness)
-        _LOGGER.info(self._led_brightness)
-
+    async def set_led_brightness(self, brightness: int) -> None:
         data = struct.pack('H', brightness)
 
         hw_service = await self._conn.get_service(VOLCANO_HW_SERVICE_UUID)
@@ -283,10 +273,10 @@ class Volcano:
         self._led_brightness = round(brightness)
 
     @property
-    def vibration_enabled(self):
+    def vibration_enabled(self) -> bool:
         return self._vibration_enabled
 
-    async def read_vibration_status_register(self):
+    async def read_vibration_status_register(self) -> None:
         _LOGGER.debug('Reading vibration enabled')
 
         result = await self._conn.read_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID)
@@ -300,7 +290,7 @@ class Volcano:
         else:
             self._vibration_enabled = True
 
-    async def set_vibration_enabled(self,  state: bool):
+    async def set_vibration_enabled(self,  state: bool) -> None:
         vibration_mask = int.from_bytes(VOLCANO_VIBRATION_ENABLED_MASK, byteorder="big")
 
         data = struct.pack('I', vibration_mask if state else vibration_mask + 65536)
@@ -310,10 +300,10 @@ class Volcano:
         self._heater_on = state
 
     @property
-    def temperature_unit(self):
+    def temperature_unit(self) -> Union[str, None]:
         return self._temperature_unit
 
-    async def read_temperature_unit_register(self):
+    async def read_temperature_unit_register(self) -> None:
         _LOGGER.debug('Reading temperature unit register')
 
         result = await self._conn.read_gatt_char(VOLCANO_TEMP_UNIT_REGISTER_UUID)
@@ -327,7 +317,7 @@ class Volcano:
         else:
             self._temperature_unit = TEMP_FAHRENHEIT
 
-    async def set_temperature_unit(self, unit):
+    async def set_temperature_unit(self, unit: str) -> None:
         temp_unit_mask = int.from_bytes(VOLCANO_TEMP_UNIT_FAHRENHEIT_ENABLED_MASK, byteorder="big")
 
         data = struct.pack('<L', temp_unit_mask if unit == TEMP_CELSIUS else temp_unit_mask + 65536)
@@ -337,14 +327,14 @@ class Volcano:
         self._temperature_unit = unit
 
     @property
-    def heater_on(self):
+    def heater_on(self) -> bool:
         return self._heater_on
 
     @property
-    def pump_on(self):
+    def pump_on(self) -> bool:
         return self._pump_on
 
-    async def set_heater(self,  state: bool):
+    async def set_heater(self,  state: bool) -> None:
         heater_uuid = VOLCANO_HEAT_ON_UUID if state else VOLCANO_HEAT_OFF_UUID
         
         data = struct.pack('B', 0)
@@ -353,7 +343,7 @@ class Volcano:
 
         self._heater_on = state
 
-    async def set_pump(self,  state: bool):
+    async def set_pump(self,  state: bool) -> None:
         pump_uuid = VOLCANO_PUMP_ON_UUID if state else VOLCANO_PUMP_OFF_UUID
         
         data = struct.pack('B', 0)
@@ -362,13 +352,13 @@ class Volcano:
 
         self._pump_on = state
 
-    async def toggle_heater(self):
+    async def toggle_heater(self) -> None:
         await self.set_heater(not self.heater_on)
 
-    async def toggle_pump(self):
+    async def toggle_pump(self) -> None:
         await self.set_pump(not self.pump_on)
 
-    async def read_status_register(self):
+    async def read_status_register(self) -> None:
         _LOGGER.debug('Reading status register')
 
         result = await self._conn.read_gatt_char(VOLCANO_VIBRATION_REGISTER_UUID)
@@ -398,21 +388,18 @@ class Volcano:
         self._pump_changed_callback(self._pump_on)
 
 
-    def on_heater_changed(self, callback):
+    def on_heater_changed(self, callback: Callable[[bool], None]) -> None:
         self._heater_changed_callback = callback
 
-    def on_pump_changed(self, callback):
+    def on_pump_changed(self, callback: Callable[[bool], None]) -> None:
         self._pump_changed_callback = callback
 
-    def _status_changed(self, sender, data):
+    def _status_changed(self, sender: int, data: bytearray) -> None:
         _LOGGER.debug("Connection status update")
         data = int.from_bytes(data, byteorder="little")
 
         heater_mask = int.from_bytes(VOLCANO_HEATER_ON_MASK, byteorder="big")
         pump_mask = int.from_bytes(VOLCANO_PUMP_ON_MASK, byteorder="big")
-
-        _LOGGER.debug(f"Pump on: {self.pump_on}")
-        _LOGGER.debug(f"Heater on: {self.heater_on}")
 
         if (data & heater_mask) == 0:
             self._heater_on = False

@@ -3,10 +3,11 @@ import curses
 import math
 import logging
 import signal
+import _curses
 from abc import ABC, abstractmethod
+
 from volcanobt.volcano import Volcano
 
-import _curses
 
 _LOGGER = logging.getLogger(__name__)
 
