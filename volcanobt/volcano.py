@@ -359,7 +359,7 @@ class Volcano:
 
         self._parse_stat2_register(10, result)
 
-    async def _parse_stat2_register(self, sender: int, data: bytearray) -> None:
+    def _parse_stat2_register(self, sender: int, data: bytearray) -> None:
         data = int.from_bytes(data[1:3], byteorder="big")
 
         if (data & VOLCANO_STAT2_FAHRENHEIT_ENABLED_MASK) == 0:
