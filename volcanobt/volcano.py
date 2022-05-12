@@ -313,12 +313,14 @@ class Volcano:
         self._parse_stat1_register(10, result[-2:])    
 
     def _parse_stat1_register(self, sender: int, data: bytearray) -> None:
+        _LOGGER.info(data)
+
         data = int.from_bytes(data, byteorder="big")
 
         _LOGGER.info(data)
 
-        self._heater_on = (data & VOLCANO_STAT1_HEATER_ON_MASK) == 0
-        self._pump_on = (data & VOLCANO_STAT1_PUMP_ON_MASK) == 0
+        self._heater_on = (data & VOLCANO_STAT1_HEATER_ON_MASK) != 0
+        self._pump_on = (data & VOLCANO_STAT1_PUMP_ON_MASK) != 0
         self._auto_off_enabled = (data & VOLCANO_STAT1_AUTO_OFF_ENABLED_MASK) == 0
 
         self._heater_changed_callback(self._heater_on)
