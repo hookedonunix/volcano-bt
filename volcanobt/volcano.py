@@ -131,14 +131,14 @@ class Volcano:
         return self.convert_temp_unit(self._temperature)
 
     async def read_temperature(self) -> None:
-        _LOGGER.debug('Reading current temperature')
-
         result = await self._conn.read_gatt_char(VOLCANO_TEMP_CURR_UUID)
 
         self._parse_temperature(10, result)
 
     def _parse_temperature(self, sender: int, data: bytearray) -> None:
         temperature = round(struct.unpack('<I', data)[0] / 10)
+
+        _LOGGER.debug(f"Received current temperature: {temperature}")
 
         # Check for a uint16 overflow caused by BLE implementation
         if temperature < 6536:
@@ -157,21 +157,21 @@ class Volcano:
         if self.temperature_unit == TEMP_FAHRENHEIT:
             temperature = fahrenheit_to_celsius(temperature)
 
-        data = struct.pack('<I', temperature * 10)
+        data = struct.pack("<I", temperature * 10)
 
         await self._conn.write_gatt_char(VOLCANO_TEMP_TARGET_UUID, data)
 
         self._target_temperature = round(temperature)
 
     async def read_target_temperature(self) -> None:
-        _LOGGER.debug('Reading target temperature')
-
         result = await self._conn.read_gatt_char(VOLCANO_TEMP_TARGET_UUID)
 
         self._parse_target_temperature(10, result)
 
     def _parse_target_temperature(self, sender: int, data: bytearray) -> None:
-        temperature = round(struct.unpack('<I', data)[0] / 10)
+        temperature = round(struct.unpack("<I", data)[0] / 10)
+
+        _LOGGER.debug(f"Received target temperature: {temperature}")
 
         self._target_temperature = temperature
         self._target_temperature_changed_callback(temperature)
@@ -184,66 +184,65 @@ class Volcano:
         return self._operation_hours
 
     async def read_operation_hours(self) -> None:
-        _LOGGER.debug('Reading operation hours')
-
         result = await self._conn.read_gatt_char(VOLCANO_OPERATION_HOURS_UUID)
 
-        self._operation_hours = int(struct.unpack('I', result)[0])
+        self._operation_hours = int(struct.unpack("I", result)[0])
+
+        _LOGGER.debug(f"Received target temperature: {self.operation_hours}")
 
     @property
     def serial_number(self) -> Union[str, None]:
         return self._serial_number
 
     async def read_serial_number(self) -> None:
-        _LOGGER.debug('Reading serial number')
-
         result = await self._conn.read_gatt_char(VOLCANO_SERIAL_NUMBER_UUID)
 
-        self._serial_number = result.decode('utf-8')
+        self._serial_number = result.decode("utf-8")
+
+        _LOGGER.debug(f"Received serial number: {self.serial_number}")
 
     @property
     def firmware_version(self) -> Union[str, None]:
         return self._firmware_version
 
     async def read_firmware_version(self) -> None:
-        _LOGGER.debug('Reading firmware version')
-
         result = await self._conn.read_gatt_char(VOLCANO_FIRMWARE_VERSION_UUID)
 
         self._firmware_version = result.decode('utf-8')
+
+        _LOGGER.debug(f"Received firmware version: {self.firmware_version}")
 
     @property
     def ble_firmware_version(self) -> Union[str, None]:
         return self._ble_firmware_version
 
     async def read_ble_firmware_version(self) -> None:
-        _LOGGER.debug('Reading BLE firmware version')
-
         result = await self._conn.read_gatt_char(VOLCANO_BLE_FIRMWARE_VERSION_UUID)
 
         self._ble_firmware_version = result.decode('utf-8')
+        _LOGGER.debug(f"Received ble firmware version: {self.ble_firmware_version}")
 
     @property
     def auto_off_time(self) -> Union[int, None]:
         return self._auto_off_time
 
     async def read_auto_off_time(self) -> None:
-        _LOGGER.debug('Reading auto off time')
-
         result = await self._conn.read_gatt_char(VOLCANO_AUTO_OFF_TIME_UUID)
 
         self._auto_off_time = int(struct.unpack('H', result)[0])
+
+        _LOGGER.debug(f"Received auto off time: {self.auto_off_time}")
 
     @property
     def shut_off_time(self) -> Union[int, None]:
         return self._shut_off_time
 
     async def read_shut_off_time(self) -> None:
-        _LOGGER.debug('Reading shut off time')
 
         result = await self._conn.read_gatt_char(VOLCANO_SHUT_OFF_TIME_UUID)
 
         self._shut_off_time = int(struct.unpack('H', result)[0])
+        _LOGGER.debug(f"Received shut off time: {self.shut_off_time}")
 
     @property
     def led_brightness(self) -> Union[int, None]:
@@ -257,11 +256,12 @@ class Volcano:
         self._led_brightness = round(brightness)
 
     async def read_led_brightness(self) -> None:
-        _LOGGER.debug('Reading led brightness')
 
         result = await self._conn.read_gatt_char(VOLCANO_LED_BRIGHTNESS_UUID)
 
         self._led_brightness = int(struct.unpack('H', result)[0] / 10)
+
+        _LOGGER.debug(f"Received led brightness: {self.led_brightness}")
 
     @property
     def heater_on(self) -> bool:
@@ -306,22 +306,23 @@ class Volcano:
         return self._auto_off_enabled
 
     async def read_stat1_register(self) -> None:
-        _LOGGER.debug('Reading stat1 register')
-
         result = await self._conn.read_gatt_char(VOLCANO_STAT1_REGISTER_UUID)
 
-        self._parse_stat1_register(10, result[-2:])    
+        _LOGGER.info(result)
+
+        self._parse_stat1_register(10, result)
 
     def _parse_stat1_register(self, sender: int, data: bytearray) -> None:
-        _LOGGER.info(data)
-
-        data = int.from_bytes(data, byteorder="big")
-
-        _LOGGER.info(data)
+        data = int.from_bytes(data, byteorder="little")
 
         self._heater_on = (data & VOLCANO_STAT1_HEATER_ON_MASK) != 0
         self._pump_on = (data & VOLCANO_STAT1_PUMP_ON_MASK) != 0
         self._auto_off_enabled = (data & VOLCANO_STAT1_AUTO_OFF_ENABLED_MASK) == 0
+
+        _LOGGER.debug("Received stat1 register update:")
+        _LOGGER.debug(f"  - Pump      {self._heater_on}")
+        _LOGGER.debug(f"  - Heater    {self._pump_on}")
+        _LOGGER.debug(f"  - Auto off  {self._auto_off_enabled}")
 
         self._heater_changed_callback(self._heater_on)
         self._pump_changed_callback(self._pump_on)
@@ -355,8 +356,6 @@ class Volcano:
         self._display_on_cooling_callback = callback
 
     async def read_stat2_register(self) -> None:
-        _LOGGER.debug('Reading stat2 register')
-
         result = await self._conn.read_gatt_char(VOLCANO_STAT2_REGISTER_UUID)
 
         self._parse_stat2_register(10, result)
@@ -370,6 +369,10 @@ class Volcano:
             self._temperature_unit = TEMP_FAHRENHEIT
 
         self._display_on_cooling = (data & VOLCANO_STAT2_DISPLAY_ON_COOLING_MASK) == 0
+
+        _LOGGER.debug("Received stat2 register update:")
+        _LOGGER.debug(f"  - Temperature unit   {self.temperature_unit}")
+        _LOGGER.debug(f"  - Display on cooling {self.display_on_cooling}")
 
         self._temperature_unit_changed_callback(self._temperature_unit)
         self._display_on_cooling_callback(self._display_on_cooling)
@@ -386,7 +389,7 @@ class Volcano:
         self._vibration_enabled = state
 
     async def read_stat3_register(self) -> None:
-        _LOGGER.debug('Reading stat3 register')
+        _LOGGER.debug("Reading stat3 register")
 
         result = await self._conn.read_gatt_char(VOLCANO_STAT3_REGISTER_UUID)
 
@@ -399,6 +402,9 @@ class Volcano:
             self._vibration_enabled = True
         else:
             self._vibration_enabled = False
+
+        _LOGGER.debug("Received stat3 register update:")
+        _LOGGER.debug(f"  - Vibration {self.vibration_enabled}")
 
     def encode_bit_mask(self, mask: int, state: bool):
         return struct.pack("I", mask if state else mask + 0x10000)
