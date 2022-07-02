@@ -82,7 +82,7 @@ class Volcano:
         self._heater_changed_callback = None
         self._pump_changed_callback = None
         self._temperature_unit_changed_callback = None
-        self._display_on_cooling_callback = None
+        self._display_on_cooling_changed_callback = None
 
     async def connect(self) -> bool:
         self._conn = BTLEConnection(self._mac)
@@ -352,7 +352,7 @@ class Volcano:
         self._display_on_cooling = state
     
     def on_display_on_cooling_changed(self, callback: Callable[[bool], None]) -> None:
-        self._display_on_cooling_callback = callback
+        self._display_on_cooling_changed_callback = callback
 
     async def read_stat2_register(self) -> None:
         _LOGGER.debug('Reading stat2 register')
@@ -364,15 +364,29 @@ class Volcano:
     def _parse_stat2_register(self, sender: int, data: bytearray) -> None:
         data = int.from_bytes(data[1:3], byteorder="big")
 
-        if (data & VOLCANO_STAT2_FAHRENHEIT_ENABLED_MASK) == 0:
-            self._temperature_unit = TEMP_CELSIUS
-        else:
-            self._temperature_unit = TEMP_FAHRENHEIT
+        #if (data & VOLCANO_STAT2_FAHRENHEIT_ENABLED_MASK) == 0:
+        #    self._temperature_unit = TEMP_CELSIUS
+        #else:
+        #    self._temperature_unit = TEMP_FAHRENHEIT
 
-        self._display_on_cooling = (data & VOLCANO_STAT2_DISPLAY_ON_COOLING_MASK) == 0
+        # Stat2 register triggers on temperature change while cooling
+        # even if no value has changed, so check if values change before callback
+        temperature_unit = TEMP_CELSIUS if (data & VOLCANO_STAT2_FAHRENHEIT_ENABLED_MASK) == 0 else TEMP_FAHRENHEIT
 
-        self._temperature_unit_changed_callback(self._temperature_unit)
-        self._display_on_cooling_callback(self._display_on_cooling)
+        if self._temperature_unit != temperature_unit:
+            self._temperature_unit = temperature_unit
+            self._temperature_unit_changed_callback(self._temperature_unit)
+
+        #self._display_on_cooling = (data & VOLCANO_STAT2_DISPLAY_ON_COOLING_MASK) == 0
+
+        display_on_cooling = (data & VOLCANO_STAT2_DISPLAY_ON_COOLING_MASK) == 0
+
+        if self._display_on_cooling != display_on_cooling:
+            self._display_on_cooling = display_on_cooling
+            self._display_on_cooling_changed_callback(self._display_on_cooling)
+
+        #self._temperature_unit_changed_callback(self._temperature_unit)
+        #self._display_on_cooling_callback(self._display_on_cooling)
 
     @property
     def vibration_enabled(self) -> bool:
