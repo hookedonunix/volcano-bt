@@ -8,8 +8,9 @@ from abc import ABC, abstractmethod
 
 from volcanobt.volcano import Volcano
 
-
 _LOGGER = logging.getLogger(__name__)
+
+VOLCANO_MAC = ''
 
 class Display(ABC):
     def __init__(self, screen: '_curses._CursesWindow'):
@@ -125,12 +126,12 @@ async def display_main(screen):
 
     await volcano.connect()
 
-    asyncio.create_task(volcano.initialize_metrics())
+    asyncio.create_task(volcano.read_attributes())
 
     try:
         await display.run()
     finally:
-        disconnect()
+        await disconnect()
 
 
 def main(stdscr) -> None:

@@ -143,7 +143,8 @@ class Volcano:
         # Check for a uint16 overflow caused by BLE implementation
         if temperature < 6536:
             self._temperature = temperature
-            self._temperature_changed_callback(temperature)
+            if self._temperature_changed_callback:
+                self._temperature_changed_callback(temperature)
 
     def on_temperature_changed(self, callback: Callable[[int], None]) -> None:
         self._temperature_changed_callback = callback
@@ -174,7 +175,8 @@ class Volcano:
         _LOGGER.debug(f"Received target temperature: {temperature}")
 
         self._target_temperature = temperature
-        self._target_temperature_changed_callback(temperature)
+        if self._target_temperature_changed_callback:
+            self._target_temperature_changed_callback(temperature)
 
     def on_target_temperature_changed(self, callback: Callable[[int], None]) -> None:
         self._target_temperature_changed_callback = callback
@@ -324,8 +326,11 @@ class Volcano:
         _LOGGER.debug(f"  - Heater    {self._pump_on}")
         _LOGGER.debug(f"  - Auto off  {self._auto_off_enabled}")
 
-        self._heater_changed_callback(self._heater_on)
-        self._pump_changed_callback(self._pump_on)
+        if self._heater_changed_callback:
+            self._heater_changed_callback(self._heater_on)
+
+        if self._pump_changed_callback:
+            self._pump_changed_callback(self._pump_on)
 
     @property
     def temperature_unit(self) -> Union[str, None]:
@@ -374,7 +379,8 @@ class Volcano:
 
         if self._temperature_unit != temperature_unit:
             self._temperature_unit = temperature_unit
-            self._temperature_unit_changed_callback(self._temperature_unit)
+            if self._temperature_unit_changed_callback:
+                self._temperature_unit_changed_callback(self._temperature_unit)
 
         #self._display_on_cooling = (data & VOLCANO_STAT2_DISPLAY_ON_COOLING_MASK) == 0
 
@@ -382,7 +388,8 @@ class Volcano:
 
         if self._display_on_cooling != display_on_cooling:
             self._display_on_cooling = display_on_cooling
-            self._display_on_cooling_changed_callback(self._display_on_cooling)
+            if self._display_on_cooling_changed_callback:
+                self._display_on_cooling_changed_callback(self._display_on_cooling)
 
         _LOGGER.debug("Received stat2 register update:")
         _LOGGER.debug(f"  - Temperature unit   {self.temperature_unit}")
